@@ -22,14 +22,13 @@ let tokenExpiry = 0;
 async function getFirebaseIdToken() {
     if (currentIdToken && Date.now() < tokenExpiry) return currentIdToken;
     try {
-        const res = await axios.post("https://us-central1-mon-bocadillo-menu.cloudfunctions.net/getBotCustomToken", { secret: "AIzaSyBcQDTGG0vsKRtK6B233Wuc4YM1_Gta-7Y_SECRET" });
-        const customToken = res.data.token;
-        const authRes = await axios.post(`https://identitytoolkit.googleapis.com/v1/accounts:signInWithCustomToken?key=${API_KEY}`, {
-            token: customToken,
+        const authRes = await axios.post(`https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${API_KEY}`, {
+            email: "bot@mon-bocadillo.com",
+            password: "MonBocadilloBot2026!",
             returnSecureToken: true
         });
         currentIdToken = authRes.data.idToken;
-        tokenExpiry = Date.now() + (authRes.data.expiresIn * 1000) - 300000;
+        tokenExpiry = Date.now() + (parseInt(authRes.data.expiresIn, 10) * 1000) - 300000;
         return currentIdToken;
     } catch(e) {
         console.error("❌ Firebase Auth Error:", e.response ? e.response.data : e.message);
