@@ -703,6 +703,18 @@ async function pollOutbox() {
                 const rawTo = fields.to?.stringValue || fields.phone?.stringValue || fields.customerPhone?.stringValue || '';
                 const body = fields.body?.stringValue || fields.message?.stringValue || fields.text?.stringValue || '';
                 const targetSessionId = fields.sessionId?.stringValue || fields.session?.stringValue || null;
+
+                // 🛑 SÉCURITÉ : Ignorer et expirer automatiquement tout message vieux de plus de 15 minutes
+                const rawCreatedAt = fields.createdAt?.timestampValue || fields.createdAt?.integerValue || fields.timestamp?.integerValue || item.document.createTime;
+                let msgTime = rawCreatedAt ? (typeof rawCreatedAt === 'string' ? new Date(rawCreatedAt).getTime() : Number(rawCreatedAt)) : null;
+                if (msgTime && (Date.now() - msgTime > 15 * 60 * 1000)) {
+                    console.log(`⏩ [OUTBOX SÉCURITÉ] Message pour ${rawTo} ignoré car trop ancien (${Math.round((Date.now() - msgTime) / 60000)} min).`);
+                    const patchUrl = `https://firestore.googleapis.com/v1/${docName}?key=${API_KEY}&updateMask.fieldPaths=status`;
+                    axios.patch(patchUrl, {
+                        fields: { status: { stringValue: "expired_old" } }
+                    }).catch(() => {});
+                    continue;
+                }
                 
                 if (rawTo && body) {
                     // Choisir le bon socket :
