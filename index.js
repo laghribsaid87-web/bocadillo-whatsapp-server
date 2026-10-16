@@ -1,4 +1,4 @@
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require("@whiskeysockets/baileys");
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, downloadMediaMessage } = require("@whiskeysockets/baileys");
 const pino = require("pino");
 const QRCode = require("qrcode");
 const qrcodeTerminal = require("qrcode-terminal");
@@ -371,13 +371,29 @@ async function startSession(sessionId, initialData = {}) {
                     locLng = locMsg.degreesLongitude ?? locMsg.longitude;
                 }
 
+                // Détection message audio / note vocale
+                const isAudio = !!(msg.message.audioMessage);
+                let audioBase64 = null;
+                if (isAudio) {
+                    try {
+                        const buffer = await downloadMediaMessage(msg, 'buffer', {}, { reuploadRequest: sock.updateMediaMessage });
+                        if (buffer && buffer.length > 0) {
+                            audioBase64 = buffer.toString('base64');
+                            console.log(`🎙️ Note vocale reçue (${buffer.length} octets), prête pour transcription.`);
+                        }
+                    } catch(errAudio) {
+                        console.warn("⚠️ Impossible de télécharger l'audio:", errAudio.message);
+                    }
+                }
+
                 const text = (msg.message.conversation || 
                              msg.message.extendedTextMessage?.text || 
                              msg.message.imageMessage?.caption || 
                              msg.message.videoMessage?.caption || 
-                             (isLocation ? `[LOCATION: ${locLat}, ${locLng}]` : '')).trim();
+                             (isLocation ? `[LOCATION: ${locLat}, ${locLng}]` : '') ||
+                             (isAudio ? `[AUDIO_MESSAGE]` : '')).trim();
 
-                if (!text && !isLocation) continue;
+                if (!text && !isLocation && !isAudio) continue;
 
                 // Ignorer si ce texte correspond exactement à une réponse récente du bot (écho Baileys)
                 if (text && recentBotReplies.has(text)) {
@@ -467,16 +483,11 @@ async function startSession(sessionId, initialData = {}) {
                             // Si la commande n'a pas de lat/lng
                             if (!fields.lat || !fields.lat.doubleValue) {
                                 const orderId = docName.split('/orders/')[1];
-                                console.log(`✅ Mise à jour de la commande ${orderId} avec le GPS`);
+                                console.log(`✅ Mise à jour instantanée de la commande ${orderId} avec le GPS`);
                                 await updateFirestoreDoc(`artifacts/${APP_ID}/public/data/orders/${orderId}`, {
                                     lat: locLat,
                                     lng: locLng
                                 });
-                                
-                                const replyMsg = "✅ Chokran! Localisation (GPS) t-sjjlat b naja7 w l'livreur ghadi yji l3ndk.";
-                                recentBotReplies.set(replyMsg, Date.now());
-                                await sock.sendMessage(senderJid, { text: replyMsg });
-                                continue; // Stop further processing
                             }
                         }
                     } catch(err) {
@@ -496,8 +507,10 @@ async function startSession(sessionId, initialData = {}) {
                         from: senderPhone,
                         phone: senderPhone,
                         sender: senderPhone,
-                        body: text,
+                        body: isAudio ? audioBase64 : text,
                         text: text,
+                        audio: audioBase64,
+                        mediaType: isAudio ? 'audio/ogg' : null,
                         lat: locLat,
                         lng: locLng,
                         latitude: locLat,
@@ -508,13 +521,15 @@ async function startSession(sessionId, initialData = {}) {
                             from: senderPhone,
                             phone: senderPhone,
                             sender: senderPhone,
-                            body: text,
+                            body: isAudio ? audioBase64 : text,
                             text: text,
+                            audio: audioBase64,
+                            mediaType: isAudio ? 'audio/ogg' : null,
                             lat: locLat,
                             lng: locLng,
                             latitude: locLat,
                             longitude: locLng,
-                            type: isLocation ? 'location' : 'chat',
+                            type: isLocation ? 'location' : (isAudio ? 'ptt' : 'chat'),
                             address: locMsg?.name || locMsg?.address || '',
                             pushName: senderName,
                             pushname: senderName,
